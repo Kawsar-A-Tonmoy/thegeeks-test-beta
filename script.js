@@ -1,10 +1,57 @@
 // ====== CONFIG ======
-const API_BASE = 'http://localhost:5000';
+const STORAGE_KEY = 'products'; // Kept for admin login (local storage)
+const ORDERS_KEY = 'orders';   // Kept for admin login (local storage)
 const DELIVERY_FEE = 60;
 
-// Add your payment numbers here (can be empty now; editable later)
-const BKASH_NUMBER = '01XXXXXXXXX'; // set later
-const COD_NUMBER   = '01YYYYYYYYY'; // set later
+// Payment numbers (can be updated later)
+const BKASH_NUMBER = '01XXXXXXXXX'; // Set your Bkash number
+const COD_NUMBER = '01YYYYYYYYY';   // Set your COD contact number
+
+// Replace with your Google Apps Script web app URL
+const API_URL = 'https://script.google.com/macros/s/AKfycbzhEKreqKnJ6JOgGTcBaPkfwTesF4M2IicU842jIB1J9Pnrq3GbD7gXjQJKZwqTh0Qn5Q/exec'; // TODO: Replace with actual URL
+
+// ====== UTIL / STORAGE ======
+function newId() {
+  return 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+// Load products from Google Sheets
+async function loadProducts() {
+  try {
+    const response = await fetch(`${API_URL}?action=getProducts`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to load products');
+    }
+    return data.data;
+  } catch (err) {
+    console.error('Error loading products:', err);
+    alert('Error loading products: ' + err.message);
+    return [];
+  }
+}
+
+// Load orders from Google Sheets
+async function loadOrders() {
+  try {
+    const response = await fetch(`${API_URL}?action=getOrders`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to load orders');
+    }
+    return data.data;
+  } catch (err) {
+    console.error('Error loading orders:', err);
+    alert('Error loading orders: ' + err.message);
+    return [];
+  }
+}
 
 // ====== PRODUCT PAGE ======
 async function displayProducts() {
@@ -13,7 +60,7 @@ async function displayProducts() {
     hot: document.getElementById('hot-deals'),
     all: document.getElementById('all-products'),
   };
-  const products = await fetchProducts();
+  const products = await loadProducts();
 
   Object.values(sections).forEach(el => { if (el) el.innerHTML = ''; });
 
@@ -39,7 +86,7 @@ function createProductCard(p) {
   const isOOS = Number(p.stock) <= 0;
   const hasDiscount = Number(p.discount) > 0;
   const price = Number(p.price) || 0;
-  const finalPrice = hasDiscount ? (price * (1 - Number(p.discount)/100)) : price;
+  const finalPrice = hasDiscount ? (price * (1 - Number(p.discount) / 100)) : price;
 
   const card = document.createElement('div');
   card.className = 'card product-card';
@@ -92,12 +139,15 @@ function updateDeliveryCharge() {
 
 // ====== CHECKOUT MODAL FLOW ======
 async function openCheckoutModal(productId) {
-  const products = await fetchProducts();
+  const products = await loadProducts();
   const p = products.find(x => x.id === productId);
-  if (!p) return;
+  if (!p) {
+    alert('Product not found.');
+    return;
+  }
 
   const price = Number(p.price) || 0;
-  const unit = Number(p.discount) > 0 ? price * (1 - Number(p.discount)/100) : price;
+  const unit = Number(p.discount) > 0 ? price * (1 - Number(p.discount) / 100) : price;
 
   // Fill modal fields
   document.getElementById('co-product-id').value = p.id;
@@ -126,11 +176,13 @@ async function openCheckoutModal(productId) {
   modal.classList.add('show');
   modal.setAttribute('aria-hidden', 'false');
 }
+
 function closeCheckoutModal() {
   const modal = document.getElementById('checkout-modal');
   modal.classList.remove('show');
   modal.setAttribute('aria-hidden', 'true');
 }
+
 function updateTotalInModal() {
   const qty = Number(document.getElementById('co-qty').value || 1);
   const unit = Number(document.getElementById('co-unit-price-raw').value || 0);
@@ -138,6 +190,7 @@ function updateTotalInModal() {
   const total = unit * qty + deliveryFee;
   document.getElementById('co-total').value = total.toFixed(2);
 }
+
 function handlePaymentChange() {
   const method = document.getElementById('co-payment').value;
   const payNumInput = document.getElementById('co-payment-number');
@@ -156,10 +209,10 @@ function handlePaymentChange() {
 }
 
 // Validate simple email & phone
-function validEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
-function validPhone(v){ return /^[0-9+\-\s]{6,}$/.test(v); }
+function validEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+function validPhone(v) { return /^[0-9+\-\s]{6,}$/.test(v); }
 
-// Submit checkout: validate -> post to backend
+// Submit checkout: validate -> save to Google Sheets
 async function submitCheckoutOrder(e) {
   e.preventDefault();
 
@@ -192,6 +245,7 @@ async function submitCheckoutOrder(e) {
   if (!txn) { alert('Transaction ID is required.'); return; }
 
   const order = {
+    timeISO: new Date().toISOString(),
     productId: id,
     productName: name,
     color,
@@ -208,26 +262,23 @@ async function submitCheckoutOrder(e) {
     transactionId: txn
   };
 
-  // Post order to backend (which handles stock reduction)
   try {
-    const response = await fetch(`${API_BASE}/orders`, {
+    const response = await fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(order)
+      body: JSON.stringify({ action: 'addOrder', order, productId: id, quantity: qty })
     });
-    if (!response.ok) {
-      const err = await response.json();
-      alert(`Error: ${err.description || 'Failed to place order'}`);
-      return;
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to place order');
     }
+    closeCheckoutModal();
+    alert('Your order was placed successfully!');
+    if (document.getElementById('new-products')) await displayProducts();
   } catch (err) {
-    alert('Network error: ' + err.message);
-    return;
+    console.error('Error placing order:', err);
+    alert('Error placing order: ' + err.message);
   }
-
-  closeCheckoutModal();
-  alert('Your order was placed successfully!');
-  if (document.getElementById('new-products')) displayProducts();
 }
 
 // ====== ADMIN: PRODUCTS (inline editable) ======
@@ -235,6 +286,7 @@ async function addProduct(e) {
   e.preventDefault();
 
   const product = {
+    id: newId(),
     name: document.getElementById('product-name').value.trim(),
     price: Number(document.getElementById('product-price').value || 0),
     image: document.getElementById('product-image').value.trim(),
@@ -246,39 +298,41 @@ async function addProduct(e) {
   };
 
   try {
-    const response = await fetch(`${API_BASE}/products`, {
+    const response = await fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(product)
+      body: JSON.stringify({ action: 'addProduct', product })
     });
-    if (!response.ok) throw new Error('Failed to add product');
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to add product');
+    }
+    e.target.reset();
+    await renderDataTable();
+    alert('Product saved!');
   } catch (err) {
-    alert('Error: ' + err.message);
-    return;
+    console.error('Error adding product:', err);
+    alert('Error adding product: ' + err.message);
   }
-
-  e.target.reset();
-  renderDataTable();
-  alert('Product saved!');
 }
 
 async function renderDataTable() {
   const tbody = document.getElementById('data-body');
   if (!tbody) return;
-  const products = await fetchProducts();
+  const products = await loadProducts();
   tbody.innerHTML = '';
 
   products.forEach(p => {
     const tr = document.createElement('tr');
 
     const cols = [
-      { key: 'name',        type: 'text' },
-      { key: 'price',       type: 'number' },
-      { key: 'image',       type: 'text' },
-      { key: 'category',    type: 'text' }, // new/hot/all
-      { key: 'color',       type: 'text' },
-      { key: 'discount',    type: 'number' },
-      { key: 'stock',       type: 'number' },
+      { key: 'name', type: 'text' },
+      { key: 'price', type: 'number' },
+      { key: 'image', type: 'text' },
+      { key: 'category', type: 'text' }, // new/hot/all
+      { key: 'color', type: 'text' },
+      { key: 'discount', type: 'number' },
+      { key: 'stock', type: 'number' },
       { key: 'description', type: 'text' },
     ];
 
@@ -297,17 +351,23 @@ async function renderDataTable() {
           val = n;
         }
         if (col.key === 'category') {
-          const allowed = ['new','hot','all'];
+          const allowed = ['new', 'hot', 'all'];
           if (!allowed.includes(val)) {
             alert('Category must be one of: new, hot, all');
             td.textContent = p.category;
             return;
           }
         }
-        await updateProductField(p.id, col.key, val);
-        if (col.key === 'stock') {
-          const cur = (await fetchProducts()).find(x => x.id === p.id);
-          tr.querySelector('td[data-status="1"]').textContent = computeStatus(cur);
+        try {
+          await updateProductField(p.id, col.key, val);
+          if (col.key === 'stock') {
+            const cur = (await loadProducts()).find(x => x.id === p.id);
+            tr.querySelector('td[data-status="1"]').textContent = computeStatus(cur);
+          }
+        } catch (err) {
+          console.error('Error updating product:', err);
+          alert('Error updating: ' + err.message);
+          td.textContent = p[col.key] ?? '';
         }
       });
 
@@ -324,7 +384,9 @@ async function renderDataTable() {
     del.className = 'danger';
     del.textContent = 'Delete';
     del.addEventListener('click', async () => {
-      if (confirm(`Delete "${p.name}"?`)) await deleteProductById(p.id);
+      if (confirm(`Delete "${p.name}"?`)) {
+        await deleteProductById(p.id);
+      }
     });
     tdActions.appendChild(del);
     tr.appendChild(tdActions);
@@ -336,28 +398,37 @@ async function renderDataTable() {
 function computeStatus(p) { return Number(p.stock) > 0 ? 'In Stock' : 'Out of Stock'; }
 
 async function updateProductField(id, field, value) {
-  const updateData = { [field]: value };
-  if (['price','discount','stock'].includes(field)) updateData[field] = Number(value) || 0;
-
   try {
-    const response = await fetch(`${API_BASE}/products/${id}`, {
-      method: 'PUT',
+    const response = await fetch(API_URL, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updateData)
+      body: JSON.stringify({ action: 'updateProduct', id, field, value })
     });
-    if (!response.ok) throw new Error('Failed to update product');
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to update product');
+    }
   } catch (err) {
-    alert('Error: ' + err.message);
+    console.error('Error updating product:', err);
+    throw err;
   }
 }
 
 async function deleteProductById(id) {
   try {
-    const response = await fetch(`${API_BASE}/products/${id}`, { method: 'DELETE' });
-    if (!response.ok) throw new Error('Failed to delete product');
-    renderDataTable();
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'deleteProduct', id })
+    });
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to delete product');
+    }
+    await renderDataTable();
   } catch (err) {
-    alert('Error: ' + err.message);
+    console.error('Error deleting product:', err);
+    alert('Error deleting product: ' + err.message);
   }
 }
 
@@ -365,7 +436,7 @@ async function deleteProductById(id) {
 async function renderOrdersTable() {
   const tbody = document.getElementById('orders-body');
   if (!tbody) return;
-  const orders = await fetchOrders();
+  const orders = await loadOrders();
   tbody.innerHTML = '';
 
   orders.forEach(o => {
@@ -401,27 +472,12 @@ function logoutAdmin() {
   location.reload();
 }
 
-// Helper fetch functions
-async function fetchProducts() {
-  const response = await fetch(`${API_BASE}/products`);
-  if (!response.ok) throw new Error('Failed to load products');
-  return await response.json();
-}
-
-async function fetchOrders() {
-  const response = await fetch(`${API_BASE}/orders`);
-  if (!response.ok) throw new Error('Failed to load orders');
-  return await response.json();
-}
-
-// Initialize based on page
-if (document.getElementById('new-products')) {
-  displayProducts();
-} else if (document.getElementById('data-body')) {
-  renderDataTable();
-  renderOrdersTable();
-}
-
-// Note: Add event listener for add product form if not already
-const addForm = document.getElementById('add-product-form'); // Assume ID in HTML
-if (addForm) addForm.addEventListener('submit', addProduct);
+// ====== INITIALIZATION ======
+document.addEventListener('DOMContentLoaded', async () => {
+  if (document.getElementById('new-products')) await displayProducts();
+  if (document.getElementById('data-body')) await renderDataTable();
+  if (document.getElementById('orders-body')) await renderOrdersTable();
+  if (document.getElementById('add-product-form')) {
+    document.getElementById('add-product-form').addEventListener('submit', addProduct);
+  }
+});
