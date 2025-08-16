@@ -7,7 +7,7 @@ const DELIVERY_FEE = 60;
 const BKASH_NUMBER = '01XXXXXXXXX'; // set later
 const COD_NUMBER   = '01YYYYYYYYY'; // set later
 
-// Firebase Config (paste your firebaseConfig here from Step 1)
+// Firebase Config
 const firebaseConfig = {
   apiKey: "AIzaSyBYzuaMcH_fH43e9qgdntIH7ez29wVpzaU",
   authDomain: "thegeeks-1b8aa.firebaseapp.com",
@@ -119,8 +119,6 @@ async function displayProducts() {
   }
 }
 
-// (createProductCard remains the same, but update order-btn to use product.id from Firestore)
-
 function createProductCard(p) {
   const isOOS = Number(p.stock) <= 0;
   const hasDiscount = Number(p.discount) > 0;
@@ -157,7 +155,7 @@ function createProductCard(p) {
   return card;
 }
 
-// ====== DELIVERY CHARGE LOGIC ====== (unchanged)
+// ====== DELIVERY CHARGE LOGIC ======
 function calculateDeliveryFee(address) {
   const lowerAddr = address.toLowerCase();
   if (lowerAddr.includes("savar")) {
@@ -172,11 +170,25 @@ function updateDeliveryCharge() {
   const address = document.getElementById('co-address').value.trim();
   const deliveryFee = calculateDeliveryFee(address);
   document.getElementById('co-delivery').value = `Delivery Charge = ${deliveryFee}`;
-  document.getElementById('co-delivery').dataset.fee = deliveryFee; // store raw fee
+  document.getElementById('co-delivery').dataset.fee = deliveryFee;
   updateTotalInModal();
 }
 
-// ====== CHECKOUT MODAL FLOW ====== (mostly unchanged, but submit uses transaction for stock)
+function updateTotalInModal() {
+  const qty = Number(document.getElementById('co-qty').value) || 1;
+  const unitPrice = Number(document.getElementById('co-unit').value) || 0;
+  const deliveryFee = Number(document.getElementById('co-delivery').dataset.fee) || 0;
+  const total = (qty * unitPrice) + deliveryFee;
+  document.getElementById('co-total').value = `Total = ${total.toFixed(2)}`;
+}
+
+function handlePaymentChange(e) {
+  const payment = e.target.value;
+  const payNumberField = document.getElementById('co-pay-number');
+  payNumberField.value = payment === 'Bkash' ? BKASH_NUMBER : COD_NUMBER;
+}
+
+// ====== CHECKOUT MODAL FLOW ======
 async function openCheckoutModal(productId) {
   const products = await loadProducts();
   const p = products.find(x => x.id === productId);
@@ -185,10 +197,12 @@ async function openCheckoutModal(productId) {
   const price = Number(p.price) || 0;
   const unit = Number(p.discount) > 0 ? price * (1 - Number(p.discount)/100) : price;
 
-  // Fill modal fields (unchanged)...
-
-  // Default delivery fee (unchanged)...
-
+  document.getElementById('co-product').value = p.name;
+  document.getElementById('co-color').value = p.color || '-';
+  document.getElementById('co-unit').value = unit.toFixed(2);
+  document.getElementById('co-qty').value = 1;
+  document.getElementById('co-delivery').value = `Delivery Charge = ${DELIVERY_FEE}`;
+  document.getElementById('co-delivery').dataset.fee = DELIVERY_FEE;
   updateTotalInModal();
 
   const modal = document.getElementById('checkout-modal');
@@ -197,15 +211,33 @@ async function openCheckoutModal(productId) {
 }
 
 function closeCheckoutModal() {
-  // (unchanged)
+  const modal = document.getElementById('checkout-modal');
+  modal.classList.remove('show');
+  modal.setAttribute('aria-hidden', 'true');
+  document.getElementById('checkout-form').reset();
 }
 
 async function submitCheckoutOrder(e) {
   e.preventDefault();
+  const id = document.getElementById('co-product').dataset.id;
+  const name = document.getElementById('co-product').value;
+  const color = document.getElementById('co-color').value;
+  const unit = Number(document.getElementById('co-unit').value);
+  const qty = Number(document.getElementById('co-qty').value);
+  const delivery = Number(document.getElementById('co-delivery').dataset.fee);
+  const total = Number(document.getElementById('co-total').value.replace('Total = ', ''));
+  const custName = document.getElementById('co-name').value.trim();
+  const phone = document.getElementById('co-phone').value.trim();
+  const email = document.getElementById('co-email').value.trim();
+  const address = document.getElementById('co-address').value.trim();
+  const payment = document.getElementById('co-payment').value;
+  const payNumber = document.getElementById('co-pay-number').value.trim();
+  const txn = document.getElementById('co-txn').value.trim();
 
-  // Extract form values (unchanged: id, name, color, unit, qty, delivery, total, custName, phone, email, address, payment, payNumber, txn)
-
-  // Validation (unchanged)...
+  if (!custName || !phone || !address) {
+    alert('Please fill in all required fields (Name, Phone, Address).');
+    return;
+  }
 
   const order = {
     timeISO: new Date().toISOString(),
@@ -225,7 +257,6 @@ async function submitCheckoutOrder(e) {
     transactionId: txn
   };
 
-  // Save order and reduce stock atomically
   try {
     await db.runTransaction(async (transaction) => {
       const productRef = db.collection(PRODUCTS_COLLECTION).doc(id);
@@ -242,7 +273,7 @@ async function submitCheckoutOrder(e) {
 
     closeCheckoutModal();
     alert('Your order was placed successfully!');
-    if (document.getElementById('new-products')) await displayProducts(); // Refresh UI
+    if (document.getElementById('new-products')) await displayProducts();
   } catch (error) {
     console.error('Transaction failed:', error);
     alert('Error placing order: ' + error);
@@ -254,7 +285,7 @@ async function addProduct(e) {
   e.preventDefault();
 
   const product = {
-    id: newId(),  // Note: Firestore will override with auto-ID if not set, but we keep for consistency
+    id: newId(),
     name: document.getElementById('product-name').value.trim(),
     price: Number(document.getElementById('product-price').value || 0),
     image: document.getElementById('product-image').value.trim(),
@@ -285,7 +316,7 @@ async function renderDataTable() {
       { key: 'name',        type: 'text' },
       { key: 'price',       type: 'number' },
       { key: 'image',       type: 'text' },
-      { key: 'category',    type: 'text' }, // new/hot/all
+      { key: 'category',    type: 'text' },
       { key: 'color',       type: 'text' },
       { key: 'discount',    type: 'number' },
       { key: 'stock',       type: 'number' },
@@ -385,18 +416,19 @@ async function renderOrdersTable() {
 // ====== AUTH ======
 function loginAdmin(e) {
   e.preventDefault();
-  const email = document.getElementById('admin-email').value;  // Add <input id="admin-email" type="email"> to your admin login form
-  const password = document.getElementById('admin-password').value;  // Your existing password field
-
+  const email = document.getElementById('admin-email').value;
+  const password = document.getElementById('admin-password').value;
+  console.log('Attempting login with:', email); // Debug: Log email
   auth.signInWithEmailAndPassword(email, password)
     .then(userCredential => {
-      // Check if this is the admin (rules already enforce, but UI can hide)
+      console.log('Logged in successfully! User UID:', userCredential.user.uid); // Debug: Log UID
       document.getElementById('login-section').style.display = 'none';
       document.getElementById('admin-panel').style.display = 'block';
       renderDataTable();
       renderOrdersTable();
     })
     .catch(error => {
+      console.error('Login error:', error.code, error.message); // Debug: Log error details
       alert('Login failed: ' + error.message);
     });
 }
@@ -410,7 +442,7 @@ function logoutAdmin() {
 // On page load, check auth state (for admin panel)
 auth.onAuthStateChanged(user => {
   if (user) {
-    // User is logged in, show admin panel if on admin.html
+    console.log('Auth state changed - Current User UID:', user.uid); // Debug: Log UID
     if (document.getElementById('admin-panel')) {
       document.getElementById('login-section').style.display = 'none';
       document.getElementById('admin-panel').style.display = 'block';
@@ -418,7 +450,7 @@ auth.onAuthStateChanged(user => {
       renderOrdersTable();
     }
   } else {
-    // Not logged in, show login if on admin.html
+    console.log('No user logged in'); // Debug: Log no user
     if (document.getElementById('admin-panel')) {
       document.getElementById('login-section').style.display = 'block';
       document.getElementById('admin-panel').style.display = 'none';
@@ -426,13 +458,14 @@ auth.onAuthStateChanged(user => {
   }
 });
 
-// Bind login form (add to page load or DOMContentLoaded)
-document.getElementById('admin-login-form').addEventListener('submit', loginAdmin);  // Your login form ID
-document.getElementById('logout-btn').addEventListener('click', logoutAdmin);  // Your logout button
+// Bind login form and logout button
+document.getElementById('admin-login-form').addEventListener('submit', loginAdmin);
+document.getElementById('logout-btn').addEventListener('click', logoutAdmin);
 
-// Initial loads (add to DOMContentLoaded)
+// Bind add product form
+document.getElementById('add-product-form').addEventListener('submit', addProduct);
+
+// Initial loads
 if (document.getElementById('new-products')) displayProducts();
 if (document.getElementById('data-body')) renderDataTable();
 if (document.getElementById('orders-body')) renderOrdersTable();
-
-// (Add the rest of your functions like handlePaymentChange, updateTotalInModal, etc., unchanged)
