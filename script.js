@@ -7,17 +7,11 @@ const DELIVERY_FEE = 60;
 const BKASH_NUMBER = '01XXXXXXXXX'; // set later
 const COD_NUMBER   = '01YYYYYYYYY'; // set later
 
-// Firebase Config
-const firebaseConfig = {
-  apiKey: "AIzaSyBYzuaMcH_fH43e9qgdntIH7ez29wVpzaU",
-  authDomain: "thegeeks-1b8aa.firebaseapp.com",
-  projectId: "thegeeks-1b8aa",
-  storageBucket: "thegeeks-1b8aa.firebasestorage.app",
-  messagingSenderId: "662440200085",
-  appId: "1:662440200085:web:f6d8ecfdc1f4b6d23a189c"
-};
-
-// Initialize Firebase
+// Initialize Firebase (expects firebaseConfig from config.js)
+if (typeof firebaseConfig === 'undefined') {
+  console.error('Error: firebaseConfig not found. Ensure config.js is loaded.');
+  throw new Error('Firebase configuration missing');
+}
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
@@ -84,7 +78,7 @@ async function loadOrders() {
 async function saveOrder(order) {
   try {
     await db.collection(ORDERS_COLLECTION).add(order);
-  } order(error) {
+  } catch (error) {
     console.error('Error saving order:', error);
     alert('Error placing order.');
   }
