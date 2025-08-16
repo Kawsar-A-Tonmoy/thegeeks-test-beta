@@ -1,99 +1,50 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Mini Store — Products</title>
-  <link rel="stylesheet" href="style.css" />
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Products</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <script src="config.js"></script>
+  <script src="script.js"></script>
 </head>
 <body>
-<header class="site-header">
-  <nav>
-    <a href="index.html">Products</a>
-    <a href="admin.html">Admin</a>
-  </nav>
-</header>
-
-<main class="container">
   <h1>Products</h1>
-
-  <section>
-    <h2>New Added</h2>
-    <div id="new-products" class="product-list"></div>
-  </section>
-
-  <section>
-    <h2>Hot Deals</h2>
-    <div id="hot-deals" class="product-list"></div>
-  </section>
-
-  <section>
-    <h2>All Products</h2>
-    <div id="all-products" class="product-list"></div>
-  </section>
-</main>
-
-<!-- Checkout Modal -->
-<div id="checkout-modal" class="modal" aria-hidden="true">
-  <div class="modal-content card">
-    <div class="modal-header">
-      <h3>Checkout</h3>
-      <button class="secondary" id="close-modal-btn">Close</button>
-    </div>
-
-    <form id="checkout-form" class="form">
-      <!-- Auto-filled product info -->
-      <div class="row">
-        <input id="co-product-name" placeholder="Product" readonly />
-        <input id="co-color" placeholder="Color" readonly />
-        <input id="co-price" placeholder="Unit Price (৳)" readonly />
+  <section id="new-products"></section>
+  <section id="hot-deals"></section>
+  <section id="all-products"></section>
+  <section id="checkout-modal" class="modal" aria-hidden="true">
+    <div class="card modal-content">
+      <div class="modal-header">
+        <h2>Checkout</h2>
+        <button id="close-modal-btn">Close</button>
       </div>
-
-      <div class="row">
-        <input id="co-qty" type="number" min="1" placeholder="Quantity" required />
-        <input id="co-delivery" placeholder="Delivery Charge (৳)" value="60" readonly />
-        <input id="co-total" placeholder="Total (৳)" readonly />
-      </div>
-
-      <!-- Customer details -->
-      <div class="row">
-        <input id="co-name" placeholder="Your Name" required />
-        <input id="co-phone" placeholder="Phone Number" required />
-        <input id="co-email" type="email" placeholder="Email" required />
-      </div>
-      <textarea id="co-address" placeholder="Delivery Address" required></textarea>
-
-      <!-- Payment -->
-      <div class="row">
-        <select id="co-payment" required>
-          <option value="" selected disabled>Payment Method</option>
-          <option value="COD">Cash on Delivery</option>
-          <option value="Bkash">Bkash</option>
-        </select>
-        <input id="co-payment-number" placeholder="Pay To Number" readonly />
-        <input id="co-txn" placeholder="Transaction ID (required)" required />
-      </div>
-
-      <div class="muted" id="co-note"></div>
-
-      <div>
+      <form id="checkout-form" class="form">
+        <input id="co-product" readonly>
+        <input id="co-color" readonly>
+        <input id="co-unit" readonly>
+        <input id="co-qty" type="number" min="1">
+        <input id="co-delivery" readonly data-fee="60">
+        <input id="co-total" readonly>
+        <input id="co-name" placeholder="Name" required>
+        <input id="co-phone" placeholder="Phone" required>
+        <input id="co-email" type="email" placeholder="Email">
+        <input id="co-address" placeholder="Address" required>
+        <div>
+          <label>Payment Method</label>
+          <select id="co-payment">
+            <option>Cash on Delivery</option>
+            <option>Bkash</option>
+          </select>
+        </div>
+        <input id="co-pay-number" readonly>
+        <input id="co-txn" placeholder="Transaction ID (optional)">
         <button type="submit">Place Order</button>
-      </div>
-
-      <!-- Hidden fields -->
-      <input type="hidden" id="co-product-id" />
-      <input type="hidden" id="co-unit-price-raw" />
-      <input type="hidden" id="co-available-stock" />
-    </form>
-  </div>
-</div>
-
-<script src="script.js"></script>
-<script>
-  document.addEventListener('DOMContentLoaded', displayProducts);
-  window.addEventListener('storage', (e) => { if (e.key === STORAGE_KEY) displayProducts(); });
-</script>
+      </form>
+    </div>
+  </section>
 </body>
 </html>
