@@ -84,7 +84,7 @@ async function loadOrders() {
 async function saveOrder(order) {
   try {
     await db.collection(ORDERS_COLLECTION).add(order);
-  } catch (error) {
+  } order(error) {
     console.error('Error saving order:', error);
     alert('Error placing order.');
   }
@@ -97,25 +97,50 @@ async function displayProducts() {
     hot: document.getElementById('hot-deals'),
     all: document.getElementById('all-products'),
   };
+  console.log('displayProducts: Sections found:', sections); // Debug: Check if sections exist
   const products = await loadProducts();
+  console.log('displayProducts: Loaded products:', products); // Debug: Log products
 
-  Object.values(sections).forEach(el => { if (el) el.innerHTML = ''; });
+  Object.values(sections).forEach(el => {
+    if (el) {
+      el.innerHTML = '';
+      console.log('Cleared section:', el.id); // Debug: Confirm section cleared
+    }
+  });
 
   products.forEach(p => {
-    if (sections.new && p.category === 'new') sections.new.appendChild(createProductCard(p));
-    if (sections.hot && p.category === 'hot') sections.hot.appendChild(createProductCard(p));
-    if (sections.all) sections.all.appendChild(createProductCard(p));
+    console.log('Processing product:', p.id, p.name); // Debug: Log each product
+    if (sections.new && p.category === 'new') {
+      sections.new.appendChild(createProductCard(p));
+      console.log('Added to new-products:', p.id); // Debug
+    }
+    if (sections.hot && p.category === 'hot') {
+      sections.hot.appendChild(createProductCard(p));
+      console.log('Added to hot-deals:', p.id); // Debug
+    }
+    if (sections.all) {
+      sections.all.appendChild(createProductCard(p));
+      console.log('Added to all-products:', p.id); // Debug
+    }
   });
 
   // Checkout modal bindings (on product page)
   const modal = document.getElementById('checkout-modal');
+  console.log('displayProducts: Modal found:', !!modal); // Debug: Check if modal exists
   if (modal) {
-    document.getElementById('close-modal-btn').onclick = closeCheckoutModal;
+    const closeBtn = document.getElementById('close-modal-btn');
     const form = document.getElementById('checkout-form');
+    const payment = document.getElementById('co-payment');
+    const qty = document.getElementById('co-qty');
+    const address = document.getElementById('co-address');
+    console.log('Modal elements:', { closeBtn: !!closeBtn, form: !!form, payment: !!payment, qty: !!qty, address: !!address }); // Debug
+    closeBtn.onclick = closeCheckoutModal;
     form.addEventListener('submit', submitCheckoutOrder);
-    document.getElementById('co-payment').addEventListener('change', handlePaymentChange);
-    document.getElementById('co-qty').addEventListener('input', updateTotalInModal);
-    document.getElementById('co-address').addEventListener('input', updateDeliveryCharge);
+    payment.addEventListener('change', handlePaymentChange);
+    qty.addEventListener('input', updateTotalInModal);
+    address.addEventListener('input', updateDeliveryCharge);
+  } else {
+    console.error('Checkout modal not found'); // Debug
   }
 }
 
@@ -127,6 +152,7 @@ function createProductCard(p) {
 
   const card = document.createElement('div');
   card.className = 'card product-card';
+  console.log('Creating card for product:', p.id, p.name, 'Out of stock:', isOOS); // Debug
 
   card.innerHTML = `
     <img src="${p.image}" alt="${p.name}" onerror="this.src=''; this.alt='Image not available';">
@@ -147,8 +173,11 @@ function createProductCard(p) {
     </div>
   `;
 
-  card.querySelector('.order-btn').addEventListener('click', (e) => {
+  const orderBtn = card.querySelector('.order-btn');
+  console.log('Order button created for product:', p.id, 'Disabled:', isOOS); // Debug
+  orderBtn.addEventListener('click', (e) => {
     const id = e.currentTarget.getAttribute('data-id');
+    console.log('Order button clicked for product ID:', id); // Debug
     openCheckoutModal(id);
   });
 
@@ -190,14 +219,20 @@ function handlePaymentChange(e) {
 
 // ====== CHECKOUT MODAL FLOW ======
 async function openCheckoutModal(productId) {
+  console.log('Opening checkout modal for product ID:', productId); // Debug
   const products = await loadProducts();
   const p = products.find(x => x.id === productId);
-  if (!p) return;
+  if (!p) {
+    console.error('Product not found for ID:', productId);
+    alert('Product not found.');
+    return;
+  }
 
   const price = Number(p.price) || 0;
   const unit = Number(p.discount) > 0 ? price * (1 - Number(p.discount)/100) : price;
 
   document.getElementById('co-product').value = p.name;
+  document.getElementById('co-product').dataset.id = p.id; // Ensure product ID is set
   document.getElementById('co-color').value = p.color || '-';
   document.getElementById('co-unit').value = unit.toFixed(2);
   document.getElementById('co-qty').value = 1;
@@ -219,6 +254,7 @@ function closeCheckoutModal() {
 
 async function submitCheckoutOrder(e) {
   e.preventDefault();
+  console.log('Submitting checkout order'); // Debug
   const id = document.getElementById('co-product').dataset.id;
   const name = document.getElementById('co-product').value;
   const color = document.getElementById('co-color').value;
@@ -234,49 +270,67 @@ async function submitCheckoutOrder(e) {
   const payNumber = document.getElementById('co-pay-number').value.trim();
   const txn = document.getElementById('co-txn').value.trim();
 
+  console.log('Order data:', { id, name, color, unit, qty, delivery, total, custName, phone, email, address, payment, payNumber, txn }); // Debug
+
   if (!custName || !phone || !address) {
+    console.error('Validation failed: Missing required fields');
     alert('Please fill in all required fields (Name, Phone, Address).');
     return;
   }
 
-  const order = {
-    timeISO: new Date().toISOString(),
-    productId: id,
-    productName: name,
-    color,
-    unitPrice: Number(unit.toFixed(2)),
-    quantity: qty,
-    deliveryFee: delivery,
-    total: Number(total.toFixed(2)),
-    customerName: custName,
-    phone,
-    email,
-    address,
-    paymentMethod: payment,
-    paymentNumber: payNumber,
-    transactionId: txn
-  };
+  if (!id) {
+    console.error('No product ID found in co-product dataset');
+    alert('Error: Product ID missing.');
+    return;
+  }
 
   try {
     await db.runTransaction(async (transaction) => {
+      console.log('Starting transaction for product ID:', id); // Debug
       const productRef = db.collection(PRODUCTS_COLLECTION).doc(id);
       const productDoc = await transaction.get(productRef);
-      if (!productDoc.exists) throw 'Product not found';
+      if (!productDoc.exists) {
+        console.error('Product not found in Firestore for ID:', id);
+        throw new Error('Product not found');
+      }
 
       const currentStock = productDoc.data().stock || 0;
-      if (currentStock < qty) throw 'Insufficient stock';
+      console.log('Current stock:', currentStock, 'Requested qty:', qty); // Debug
+      if (currentStock < qty) {
+        console.error('Insufficient stock:', currentStock, '<', qty);
+        throw new Error('Insufficient stock');
+      }
 
       transaction.update(productRef, { stock: currentStock - qty });
       const orderRef = db.collection(ORDERS_COLLECTION).doc();
+      const order = {
+        timeISO: new Date().toISOString(),
+        productId: id,
+        productName: name,
+        color,
+        unitPrice: Number(unit.toFixed(2)),
+        quantity: qty,
+        deliveryFee: delivery,
+        total: Number(total.toFixed(2)),
+        customerName: custName,
+        phone,
+        email,
+        address,
+        paymentMethod: payment,
+        paymentNumber: payNumber,
+        transactionId: txn
+      };
+      console.log('Saving order:', order); // Debug
       transaction.set(orderRef, order);
     });
 
+    console.log('Order placed successfully'); // Debug
     closeCheckoutModal();
     alert('Your order was placed successfully!');
     if (document.getElementById('new-products')) await displayProducts();
   } catch (error) {
-    console.error('Transaction failed:', error);
-    alert('Error placing order: ' + error);
+    console.error('Transaction failed:', error.message); // Debug
+    alert('Error placing order: ' + error.message);
   }
 }
 
@@ -418,17 +472,17 @@ function loginAdmin(e) {
   e.preventDefault();
   const email = document.getElementById('admin-email').value;
   const password = document.getElementById('admin-password').value;
-  console.log('Attempting login with:', email); // Debug: Log email
+  console.log('Attempting login with:', email); // Debug
   auth.signInWithEmailAndPassword(email, password)
     .then(userCredential => {
-      console.log('Logged in successfully! User UID:', userCredential.user.uid); // Debug: Log UID
+      console.log('Logged in successfully! User UID:', userCredential.user.uid); // Debug
       document.getElementById('login-section').style.display = 'none';
       document.getElementById('admin-panel').style.display = 'block';
       renderDataTable();
       renderOrdersTable();
     })
     .catch(error => {
-      console.error('Login error:', error.code, error.message); // Debug: Log error details
+      console.error('Login error:', error.code, error.message); // Debug
       alert('Login failed: ' + error.message);
     });
 }
@@ -442,7 +496,7 @@ function logoutAdmin() {
 // On page load, check auth state (for admin panel)
 auth.onAuthStateChanged(user => {
   if (user) {
-    console.log('Auth state changed - Current User UID:', user.uid); // Debug: Log UID
+    console.log('Auth state changed - Current User UID:', user.uid); // Debug
     if (document.getElementById('admin-panel')) {
       document.getElementById('login-section').style.display = 'none';
       document.getElementById('admin-panel').style.display = 'block';
@@ -450,7 +504,7 @@ auth.onAuthStateChanged(user => {
       renderOrdersTable();
     }
   } else {
-    console.log('No user logged in'); // Debug: Log no user
+    console.log('No user logged in'); // Debug
     if (document.getElementById('admin-panel')) {
       document.getElementById('login-section').style.display = 'block';
       document.getElementById('admin-panel').style.display = 'none';
@@ -464,6 +518,15 @@ document.getElementById('logout-btn').addEventListener('click', logoutAdmin);
 
 // Bind add product form
 document.getElementById('add-product-form').addEventListener('submit', addProduct);
+
+// Fallback event listener for order buttons
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('order-btn')) {
+    const id = e.target.getAttribute('data-id');
+    console.log('Fallback: Order button clicked for product ID:', id); // Debug
+    openCheckoutModal(id);
+  }
+});
 
 // Initial loads
 if (document.getElementById('new-products')) displayProducts();
